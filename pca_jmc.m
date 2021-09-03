@@ -2,10 +2,10 @@ function out = pca_jmc(X,nvp)
 % Takes as input an m x n matrix, where m = number of observations and n =
 % number of variables, and performs PCA via economy-sized SVD, such that
 % the rank of the reconstructed input matrix and its reconstructed
-% covariance matrix are reduced to d, where d is the number of principal
-% components required to explain the amount of variance specified as PEV
-% (proportion of explained variance). Returns a structure with results in
-% its fields.
+% covariance/correlation matrix are reduced to d, where d is the number of
+% principal components required to explain the amount of variance specified
+% as PEV (proportion of explained variance). Returns a structure with
+% results in its fields.
 %
 % PARAMETERS
 % ----------
@@ -94,9 +94,9 @@ function out = pca_jmc(X,nvp)
 %                     0 if the mean-centered matrix is rank-deficient by
 %                     more than 1, though this is rare in empirical cases,
 %                     due to the noise in real-world data.
-%   .singVals      -- Vector of singular values corresponding to retained
-%                     left/right singular vectors (not the diagonal matrix
-%                     Sigma).
+%   .sigmas        -- Vector of singular values corresponding to retained
+%                     left/right singular vectors (equivalent to the
+%                     diagonal of S).
 %   .eigenvalues   -- Vector of eigenvalues corresponding to retained
 %                     principal components (recovered from singular
 %                     values).
@@ -137,16 +137,14 @@ if sum(isnan(X), 'all') > 0
     X(sum(isnan(X), 2) > 0, :) = [];
 end
 
-% Option to standardize variables and perform PCA based on correlation
-% matrix.
-if nvp.corrMat
-    B = normalize(X);
-else
-    % Ensure data is centered at origin if not already centered. Note this
-    % will result in the loss of one degree of freedom. If m < n and
-    % matrix, this will usually also result in decrease of rank by 1. 
-    B = bsxfun(@minus, X, mean(X));
-end
+% Ensure data is centered at origin if not already centered. Note this will
+% result in the loss of one degree of freedom. If m < n and matrix, this
+% will usually also result in decrease of rank by 1.
+B = X - mean(X);
+
+% Option to normalize mean-centered variables by their respective 2-norms
+% and perform PCA based on correlation matrix.
+if nvp.corrMat, B = B ./ vecnorm(B); end
 
 % Perform economy-sized singular value decomposition.
 [U, S, V] = svd(B, 'econ');
@@ -173,15 +171,24 @@ end
 
 % Extract singular values from the matrix sigma (already sorted in
 % descending order).
-singVals = diag(S);
+sigmas = diag(S);
 
 % Degrees of freedom = m-1 if data is centered (as columns now sum to zero)
 % and m otherwise.
 dof = size(B, 1) - 1;
 
-% Recover eigenvalues of the covariance matrix, which are equivalent to the
-% variance explained by the corresponding principal component.
-eigenvalues = singVals.^2 / dof; 
+% Recover eigenvalues of the covariance/correlation matrix, which are
+% equivalent to the variance explained by the corresponding principal
+% component. Note that if using covariance, we must norm the square of the
+% singular values by (n-1), as the covariance matrix = B'*B/(n-1), but the
+% (n-1) cancels out when dividing by stddev in the case of correlation
+% (this is also why cosine similarity, which does not involve the term n, =
+% Pearson's correlation coefficient).
+if ~nvp.corrMat
+    eigenvalues = sigmas.^2 / dof; 
+else
+    eigenvalues = sigmas.^2;
+end
 eigenspectrum = eigenvalues;
 
 % Calculate principal components. The "direct" method is US. However, BV is
@@ -201,7 +208,7 @@ prinComps = U*S;
 % (namely, where all variance is deemed shared), with emphasis placed on
 % weighting a generative set of latent variables, as opposed to the
 % "analytic" model.
-loadings = bsxfun(@times, V, sqrt(eigenvalues)');
+loadings = V .* sqrt(eigenvalues)';
 
 % Determine number of principal components needed to achieve specified PEV
 % (or use 'returnAll' or 'nDims' options if specified).
@@ -251,7 +258,7 @@ end
 out.U = U(:, 1:iDim);
 out.S = S(:, 1:iDim);
 out.V = V(:, 1:iDim);
-out.singVals = singVals(1:iDim);
+out.sigmas = sigmas(1:iDim);
 out.eigenvalues = eigenvalues(1:iDim);
 out.prinComps = prinComps(:, 1:iDim);
 out.loadings = loadings(:, 1:iDim);
