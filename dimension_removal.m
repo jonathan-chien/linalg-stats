@@ -22,8 +22,8 @@ function Xhat = dimension_removal(sourcePops,B_AllReps)
 % number of predictive dimensions that is much smaller than the total
 % number of units. As such, B_' is an underdetermined matrix, as is M (for
 % B_ = p x m, and Cov = p x p, we have M = m x p, with m << p). Thus, the
-% trailing p - m right singular vectors have an associated singular value
-% of 0. These right singular vectors are eigenvectors of Cov(X) with
+% trailing p - m right singular vectors have no associated nonzero singular
+% values. These right singular vectors are eigenvectors of Cov(X) with
 % associated eigenvalue 0 and under a PCA model interpretation correspond
 % to principal axes along which there is 0 variance (since the
 % dimensionality of the row space is smaller than that of its ambient
@@ -81,15 +81,11 @@ M = pagemtimes(permute(B_AllReps,[2 1 3]), C);
 nPredDims = size(M, 1);
 Q = NaN(nUnits, (nUnits-nPredDims), nReps); 
 for iRep = 1:nReps
-   [~,S,V] = svd(M(:,:,iRep));
+   [~,~,V] = svd(M(:,:,iRep));
    Q(:,:,iRep) = V(:, nPredDims+1 : end);
-   sigmas = diag(S);
-   assert(all(ismembertol(sigmas(nPredDims+1:end),0,1e-12)), ...
-          'Double-check inputs.')
 end
 
-% Change of basis, adopting trailing right singular vectors (with
-% associated singular value = 0) as basis for our data observations
+% Adopt trailing right singular vectors as basis for our data observations
 % (across repetition). For observations as columns of V1, we would have
 % Q' * V1, so to place observations in rows we take (Q' * V1)' = V1' *
 % Q, where V1' has observations in rows.
