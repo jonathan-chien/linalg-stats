@@ -14,7 +14,7 @@ function stats = ols(X,Y,nvp)
 % coefficients of partial determination and p values for each predictor,
 % for each response variable. Note, however, that the method employed to
 % calculate p-values here is correct for hand calculations but likely not
-% as stable or efficient as built in implementations. The advantage of this
+% as stable or efficient as built-in implementations. The advantage of this
 % function is a no-frills vectorized version of OLS over multiple response
 % variables (which may also be useful when fitting models over bins, where
 % each bin is a response variable), especially where p values are not as
@@ -46,7 +46,7 @@ function stats = ols(X,Y,nvp)
 %                 an intercept term, if one was included; i.e., the
 %                 function will find an OLS solution but will remove the
 %                 row corresponding to weights on the intercept term in the
-%                 returned value here.
+%                 returned array here.
 %   .predicted -- n x m matrix whose j_th column is the projection of the
 %                 j_th column of Y into the column space of X. The
 %                 elemeents of this vector are the model's predicted values
@@ -67,18 +67,27 @@ function stats = ols(X,Y,nvp)
 %                 variable and its predicted value under the model, i.e.,
 %                 the square of the cosine of the angle between the
 %                 unit-length j_th column of Y and its unit-length
-%                 projection in the column space of X).
-%   .cpd       -- p x m matrix of coefficients of partial determination,
-%                 where the i_th j_th element is the coefficient for the
-%                 i_th predictor on the j_th response variable (again,
-%                 there is no coefficient here for the intercept term, if
-%                 one was included).
+%                 projection onto the column space of X).
+%   .cpd       -- Optional p x m matrix of coefficients of partial
+%                 determination, where the i_th j_th element is the
+%                 coefficient for the i_th predictor on the j_th response
+%                 variable (again, there is no coefficient here for the
+%                 intercept term, if one was included). If 'cpd' = false
+%                 (see PARAMETERS), this field will be absent from the
+%                 returned stats struct.
+%   .p         -- Optional p x m matrix of p values, where the i_th j_th
+%                 element is p value attaching to the beta coefficient of
+%                 the i_th predictor toward the j_th response variable
+%                 (i.e., the i_th j_th element of the betas matrix (see
+%                 above)). If 'pVal' = false (see PARAMETERS), this field
+%                 will be absent from the returned stats struct.
 %   .vif       -- p x 1 vector whose i_th element is the variance inflation
 %                 factor (VIF) for the i_th predictor (again, no value for
 %                 the intercept term is returned, if an intercept term was
 %                 included).
 %
 % Author: Jonathan Chien 1/12/22. Last edit: 1/13/22.
+
 
 arguments
     X
@@ -104,12 +113,12 @@ stats.predicted = X * stats.beta;
 stats.resid = Y - stats.predicted;
 stats.ssr = sum( (stats.resid).^2 );
 
-% Calculate coefficient of determination for all dependent vars. 
+% Calculate coefficient of determination for all dependent variables. 
 stats.sst = sum( (Y - mean(Y)).^2 );
 stats.cd = 1 - (stats.ssr ./ stats.sst);
 
 % Calculate coefficient of partial determination for each predictor, for
-% each dependent var.
+% each dependent variable.
 if nvp.cpd
     stats.cpd = NaN(nIv, nDv);
     for iIv = 1:nIv 
@@ -129,7 +138,10 @@ if sum(X(:,end)) == nObs
     X(:,end) = [];
 end
 
-% Optionally attach p values to beta cofficients.
+% Optionally attach p values to beta cofficients. These are "hand
+% calculations" and likely will not match the numerical efficiency and
+% stability of built-in implementations, for applications where this
+% really matters (usually it should be fine).
 if nvp.pVal
     dof = nObs - nIv - 1; 
     sigmas = stats.ssr / dof;
