@@ -4,20 +4,25 @@ function stats = ols(X,Y,nvp)
 % matrix, and Y is an n x m matrix of response variables. If (not counting
 % a possible intercept term) p = m = 1 , this is univariate simple
 % regression. If m = 1, and p > 1, this is univariate multiple regression.
-% If both m > 1 and p > 1, this is multivariate multiple regression. For
-% all cases, the OLS solution consists of a p x m matrix of beta
-% coefficients, whose i_th j_th element is the weight of the i_th predictor
-% toward the j_th response variable. 
+% If m > 1 and p = 1, this is multivariate simple regression. If both m > 1
+% and p > 1, this is multivariate multiple regression. For all cases, the
+% OLS solution consists of a p x m array of beta coefficients, whose i_th
+% j_th element is the weight of the i_th predictor toward the j_th response
+% variable. This function uses the mldivide syntax, which based on the
+% nonsquare array shapes here will direct MATLAB to use its QR solver for a
+% fast analytical solution.
 %
 % PARAMETERS
 % ----------
 % X -- n x p design matrix featuring n observations and p predictors. If
 %      p = 1 (not counting a possible intercept term), this is simple
-%      regression. X should not feature a column of ones to account for
-%      an intercept term; instead see the 'intercept' name-value pair.
+%      regression; if p > 1, this is multiple regression. X should not
+%      feature a column of ones to account for an intercept term; instead
+%      see the 'intercept' name-value pair.
 % Y -- n x m matrix of response variables, where the i_th j_th element is
 %      the response of the m_th dependent variable on the i_th
-%      observation/trial. If m = 1, this is univariate regression.
+%      observation/trial. If m = 1, this is univariate regression; if m >
+%      1, this is multivariate regression.
 % Name-Value Pairs
 %   'intercept' -- (1 (default) | 0). Specify whether or not to append a
 %                  column of ones to the design matrix to allow for a
@@ -27,7 +32,7 @@ function stats = ols(X,Y,nvp)
 %                  coefficients of partial determination (CPD) will be
 %                  computed for each predictor, not including a possible
 %                  intercept term, over all response variables. If
-%                  'includeIntercept' CPDs will be calculated for the
+%                  'includeIntercept', CPDs will be computed for the
 %                  intercept as well. If false, computation of CPDs will be
 %                  suppressed.
 %   'pval'      -- (1|0, default = 1). Specify whether or not to compute
@@ -42,8 +47,8 @@ function stats = ols(X,Y,nvp)
 %   .beta      -- p x m matrix of beta coefficients, whose i_th j_th
 %                 element is the weight of the i_th predictor toward the
 %                 j_th response variable. Note that if a nonzero intercept
-%                 term was included, the last element of p corresponds to
-%                 this term.
+%                 term was included, the last row of p corresponds to this
+%                 term.
 %   .predicted -- n x m matrix whose j_th column is the projection of the
 %                 j_th column of Y into the column space of X. The
 %                 elements of this vector are the model's predicted values
@@ -60,10 +65,11 @@ function stats = ols(X,Y,nvp)
 %                 after centering the mean at 0.
 %   .cd        -- 1 x m vector whose j_th element is the coefficient of
 %                 determination of the model for the j_th response variable
-%                 (the square of the correlation between the j_th response
-%                 variable and its predicted value under the model; also,
-%                 the square of the cosine similarity of the j_th column of
-%                 Y and its projection onto the column space of X).
+%                 (the squared correlation between the j_th response
+%                 variable and its predicted value under the model, also
+%                 interpretable as the squared cosine similarity of the
+%                 j_th column of Y and its projection onto the column space
+%                 of X).
 %   .cpd       -- Optional p x m matrix of coefficients of partial
 %                 determination, where the i_th j_th element is the
 %                 coefficient for the i_th predictor toward the j_th
@@ -71,7 +77,7 @@ function stats = ols(X,Y,nvp)
 %                 intercept term by default, but the user can request one
 %                 by setting 'cpd' to 'includeIntercept' (see PARAMETERS),
 %                 in which case the last row will contain CPDs for the
-%                 intercept, with the j_th element corresponding to the
+%                 intercept, with the j_th row element corresponding to the
 %                 j_th response variable). If 'cpd' = false, this field
 %                 will be absent from the returned stats struct.
 %   .p         -- Optional p x m matrix of p values, where the i_th j_th
@@ -98,7 +104,7 @@ arguments
     nvp.vif = true
 end
 
-% Check array sizes and get number of depedent variables.
+% Check array sizes and get number of dependent variables.
 nObs = size(X, 1);
 assert(nObs == size(Y, 1), 'First array dim sizes of X and Y must be equal.')
 nDv = size(Y, 2); 
