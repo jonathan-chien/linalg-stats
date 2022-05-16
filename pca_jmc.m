@@ -17,7 +17,7 @@ function out = pca_jmc(X,nvp)
 %   'corrMat'        -- Must be logical true or false (default). Setting
 %                       true will cause PCA to be performed on correlation
 %                       rather than covariance matrix.
-%   'PEV'            -- Scalar value that is desired amount of variance
+%   'pev'            -- Scalar value that is desired amount of variance
 %                       explained by the retained principal components
 %                       (scalar value from 0 to 1). Default 0.8.
 %   'signConvention' -- Logical true or false corresponding to option to
@@ -33,7 +33,7 @@ function out = pca_jmc(X,nvp)
 %   'nDims'          -- Option to pass in integer value specifiying number
 %                       of principal components to retain. For nDims = n,
 %                       the leading n PCs will be retained (ordered by size
-%                       of associated eigenvalue). Will override PEV
+%                       of associated eigenvalue). Will override 'pev'
 %                       argument if nonempty. Alternatively, user may
 %                       specify 'full', in which case all principal
 %                       components with non-zero eigenvalues will be
@@ -47,9 +47,9 @@ function out = pca_jmc(X,nvp)
 %                       rank of the mean-centered data matrix and issue a
 %                       warning if the user has requested, through the
 %                       'nDims' name-value pair, more principal components
-%                       than there are non-zero eigenvalues (it is often
-%                       useful to work with singular vectors whose
-%                       associated singular values = 0, though calling
+%                       than there are non-zero eigenvalues (it may be
+%                       useful to work with singular vectors without  
+%                       associated nonzero singular values, though calling
 %                       non-econ svd directly may be more preferrable in
 %                       those cases). Since checking the rank involves an
 %                       additional call to the svd function, it may be
@@ -62,7 +62,7 @@ function out = pca_jmc(X,nvp)
 % out -- 1 x 1 struct with the following fields, where d is generally the
 %        number of principal components retained:
 %   .U             -- m x d matrix whose columns are the left singular
-%                     vectors of B (mean-centered version of X s.th.
+%                     vectors of Z (mean-centered version of X s.th.
 %                     columns sum to 0). d = n at most if all PCs with
 %                     nonzero eigenvalues retained and m > n (since
 %                     economy-sized SVD is used). If m < n, U is still
@@ -97,7 +97,7 @@ function out = pca_jmc(X,nvp)
 %   .sigmas        -- Vector of singular values corresponding to retained
 %                     left/right singular vectors (equivalent to the
 %                     diagonal of S).
-%   .eigenvalues   -- Vector of eigenvalues corresponding to retained
+%   .lambdas       -- Vector of eigenvalues corresponding to retained
 %                     principal components (recovered from singular
 %                     values).
 %   .prinComps     -- Size(U) matrix that corresponds to coordinates of the
@@ -106,50 +106,47 @@ function out = pca_jmc(X,nvp)
 %                     (equivalent to unit eigenvectors of the
 %                     covariance/correlation matrix). Also sometimes called
 %                     empirical orthogonal variables, whose elements are
-%                     the "scores" (of each observation on each PC). May be
-%                     calculated as BV (where B is the mean-centered input
-%                     data) or as US (U scaled by S).
+%                     the "scores" (of each observation on each principal
+%                     axis). 
 %   .loadings      -- Retained unit eigenvectors/rtSingVecs scaled by
-%                     square root of eigenvalues, analogous to SV (V scaled
-%                     by S), but note norming by DOF when calculating
-%                     eigenvalues from singular values.
+%                     square root of eigenvalues. Components of columns of
+%                     Z in the basis given by columns uf U.
 %   .eigenspectrum -- All eigenvalues (including those with value 0) of the
 %                     covariance/correlation matrix. 
 % 
-% Author: Jonathan Chien 8/29/20. Version 2.3. Last update 8/16/21.
+% Author: Jonathan Chien 8/29/20. Version 2.3. Last update 5/3/22.
 
 arguments
     X
     nvp.corrMat = false
-    nvp.PEV (1,1) = 0.8
+    nvp.pev (1,1) = 0.8
     nvp.signConvention = true
     nvp.nDims = [];
     nvp.returnAll = false
     nvp.checkRank = true
 end
 
-% Check for and handle presence of NaN type among input data.
-if sum(isnan(X), 'all') > 0
+% Check for and handle presence of NaN type among input data. Remove any
+% observations with NaN values (svd function does not tolerate NaNs).
+if any(isnan(X), 'all')
     warning(['NaNs present in input data. Removing observations with '...
-             'NaN values before calling svd function.'])
-    % Remove any observations with NaN values (svd function does not
-    % tolerate NaNs).
-    X(sum(isnan(X), 2) > 0, :) = [];
+             'NaN values before calling svd function.'])  
+    X(any(isnan(X), 2), :) = [];
 end
 
 % Ensure data is centered at origin if not already centered. Note this will
-% result in the loss of one degree of freedom. If m < n and matrix, this
-% will usually also result in decrease of rank by 1.
-B = X - mean(X);
+% result in the loss of one degree of freedom. If m < n and matrix has full
+% row rank, this will also result in decrease of rank by 1.
+Z = X - mean(X);
 
-% Option to normalize mean-centered variables by their respective 2-norms
-% and perform PCA based on correlation matrix.
-if nvp.corrMat, B = B ./ vecnorm(B); end
+% Option to normalize mean-centered variables by their respective standard
+% deviations and perform PCA based on correlation matrix.
+if nvp.corrMat, Z = normalize(Z); end
 
 % Perform economy-sized singular value decomposition.
-[U, S, V] = svd(B, 'econ');
+[U, S, V] = svd(Z, 'econ');
 
-% Option to enforce sign convetion on left and right singular vectors.
+% Option to enforce sign convention on left and right singular vectors.
 if nvp.signConvention
     % Match MATLAB's convention (designed to resolve sign ambiguity) of
     % forcing largest component (by absolute magnitude) of each right
@@ -158,11 +155,11 @@ if nvp.signConvention
     % method is that a given singular vector could conceivably have more
     % than one component with opposite signs but the same magnitude w/in
     % numerical error, and one of these components would ostensibly thus be
-    % randomly selected as largest, though I doubt this would be that big
+    % "randomly" selected as largest, though I doubt this would be that big
     % of an issue in practice. Same convention (calculated based on V) is
-    % applied to columns of U as well to ensure that the reconstruction B =
-    % U*S*V holds.
-    [~,maxCompIdx] = max(abs(V), [], 1);
+    % applied to columns of U as well to ensure that the reconstruction Z =
+    % U*S*V' holds.
+    [~, maxCompIdx] = max(abs(V), [], 1);
     [dim1, dim2] = size(V);
     columnSign = sign(V(maxCompIdx + (0:dim1:(dim2-1)*dim1)));
     U = bsxfun(@times, U, columnSign); 
@@ -175,47 +172,30 @@ sigmas = diag(S);
 
 % Degrees of freedom = m-1 if data is centered (as columns now sum to zero)
 % and m otherwise.
-dof = size(B, 1) - 1;
+dof = size(Z, 1) - 1;
 
 % Recover eigenvalues of the covariance/correlation matrix, which are
 % equivalent to the variance explained by the corresponding principal
-% component. Note that if using covariance, we must norm the square of the
-% singular values by (n-1), as the covariance matrix = B'*B/(n-1), but the
-% (n-1) cancels out when dividing by stddev in the case of correlation
-% (this is also why cosine similarity, which does not involve the term n, =
-% Pearson's correlation coefficient).
-if ~nvp.corrMat
-    eigenvalues = sigmas.^2 / dof; 
-else
-    eigenvalues = sigmas.^2;
-end
-eigenspectrum = eigenvalues;
+% component. 
+lambdas = sigmas.^2 / dof;
+eigenspectrum = lambdas;
 
-% Calculate principal components. The "direct" method is US. However, BV is
-% also possible (change of basis matrix is on the right and appears
-% "untransposed" because we regard row vectors of B as observations; so for
-% D = B', and V = eigenvectors of DD', Z = V'D has principal components as
-% rows, and Z' = D'V'' = BV, where V is still the matrix of eigenvectors of
-% B'B = DD'). There is no need to get too caught up about the syntax of
-% rows as observations vs variables, however. SVD gives us information
-% about both the rows and columns of X, and barring mean-centering,
-% transposition of X merely causes U and V to exchange
-% places/interpretations.
+% Calculate principal components. Note that USV'V = US = ZV.
 prinComps = U*S; 
 
 % "Loadings" in the style of factor loadings, i.e. endowed with variance.
-% This is the "synthesis" model of PCA as a special case of factor analysis
-% (namely, where all variance is deemed shared), with emphasis placed on
-% weighting a generative set of latent variables, as opposed to the
-% "analytic" model.
-loadings = V .* sqrt(eigenvalues)';
+% This is the "synthesis" model of PCA as a special case of unrotated
+% factor analysis (namely, where all variance is deemed shared), with
+% emphasis placed on weighting a generative set of latent variables, as
+% opposed to the "analytic" model.
+loadings = V .* sqrt(lambdas)';
 
 % Determine number of principal components needed to achieve specified PEV
 % (or use 'returnAll' or 'nDims' options if specified).
 if nvp.returnAll
     % The rank.m function uses SVD. If calling pca_jmc in a loop with
     % large number of iterations, suppressing this may increase speed.
-    if nvp.checkRank && length(eigenspectrum) > rank(B) 
+    if nvp.checkRank && length(eigenspectrum) > rank(Z) 
         warning(['Requested number of principal components exceeds '...
                  'the rank of the mean-centered matrix. This means '...
                  'that principal components with associated eigenvalue = 0 ' ...
@@ -224,13 +204,13 @@ if nvp.returnAll
     iDim = length(eigenspectrum);
     
 elseif ischar(nvp.nDims) && strcmp(nvp.nDims, 'full')
-    iDim = min(dof, size(B, 2));
+    iDim = min(dof, size(Z, 2));
     
 elseif ischar(nvp.nDims) && ~strcmp(nvp.nDims, 'full')
     error("Invalid value for 'nDims'.")
     
 elseif ~isempty(nvp.nDims)
-    if nvp.checkRank && nvp.nDims > rank(B) 
+    if nvp.checkRank && nvp.nDims > rank(Z) 
         warning(['Requested number of principal components exceeds '...
                  'the rank of the mean-centered matrix. This means '...
                  'that principal components with associated eigenvalue = 0 ' ...
@@ -238,16 +218,14 @@ elseif ~isempty(nvp.nDims)
     end
     iDim = nvp.nDims;
     
-else % use PEV
-    currentPEV = 0;
+else % Use proportion explained variance
+    currentPev = 0;
     iDim = 0;
-    totalVar = sum(eigenvalues);
-    while currentPEV < nvp.PEV
-        % In case of floating point error (if currentPEV cannot be
-        % represented in binary form):
-        if ~ismembertol(currentPEV, nvp.PEV) 
+    totalVar = sum(lambdas);
+    while currentPev < nvp.pev
+        if ~ismembertol(currentPev, nvp.pev) 
             iDim = iDim + 1;
-            currentPEV = currentPEV + eigenvalues(iDim) / totalVar;
+            currentPev = currentPev + lambdas(iDim) / totalVar;
         else
             break
         end
@@ -259,7 +237,7 @@ out.U = U(:, 1:iDim);
 out.S = S(:, 1:iDim);
 out.V = V(:, 1:iDim);
 out.sigmas = sigmas(1:iDim);
-out.eigenvalues = eigenvalues(1:iDim);
+out.lambdas = lambdas(1:iDim);
 out.prinComps = prinComps(:, 1:iDim);
 out.loadings = loadings(:, 1:iDim);
 out.eigenspectrum = eigenspectrum;
